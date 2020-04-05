@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace BDB
 {
-    class ModuleBdbAnimationMass : PartModule
+    class ModuleBdbAnimationMass : PartModule, IPartMassModifier
     {
         [KSPField(isPersistant = false)]
         public string actionModuleName = "";
@@ -28,6 +28,20 @@ namespace BDB
         private Vector3 _origComOffset;
         private Vector3 _origCopOffset;
         private Vector3 _origColOffset;
+
+        [KSPField(guiActive = true, isPersistant = false, guiName = "Info0")]
+        public string infoDisplay0 = "";
+        [KSPField(guiActive = true, isPersistant = false, guiName = "Info1")]
+        public string infoDisplay1 = "";
+        [KSPField(guiActive = true, isPersistant = false, guiName = "Info2")]
+        public string infoDisplay2 = "";
+        [KSPField(guiActive = true, isPersistant = false, guiName = "Info3")]
+        public string infoDisplay3 = "";
+        [KSPField(guiActive = true, isPersistant = false, guiName = "Info4")]
+        public string infoDisplay4 = "";
+
+        GameObject lineObj;
+        LineRenderer line;
 
         public void Start()
         {
@@ -87,27 +101,106 @@ namespace BDB
         private void OnMoving(float from, float to)
         {
             listen = true;
+            Debug.LogFormat("ModuleBdbAnimationMass: OnMoving position [{0}]", anim.GetScalar);
+            Debug.LogFormat("ModuleBdbAnimationMass: OnMoving CoM [{0}]", part.CoMOffset.ToString());
         }
 
         private void OnStop(float pos)
         {
             listen = false;
+            Debug.LogFormat("ModuleBdbAnimationMass: OnStop position [{0}]", anim.GetScalar);
+            Debug.LogFormat("ModuleBdbAnimationMass: OnStop CoM [{0}]", part.CoMOffset.ToString());
         }
 
-        public void FixedUpdate()
+        public override void OnUpdate() //void FixedUpdate()
         {
             if (!HighLogic.LoadedSceneIsFlight || vessel.HoldPhysics || anim == null)
                 return;
+
+            Vector3 vesselCoM = vessel.localCoM;
+            Vector3 partPos = Part.PartToVesselSpacePos(Vector3.zero, part, vessel, PartSpaceMode.Pristine);
+            partPos -= vesselCoM;
+            Vector3 vesselAngVel = vessel.angularVelocity;
+            Vector3 partAngSpeed;
+            partAngSpeed.x = new Vector2(partPos.y, partPos.z).magnitude * vesselAngVel.x;
+            partAngSpeed.y = new Vector2(partPos.x, partPos.z).magnitude * vesselAngVel.y;
+            partAngSpeed.z = new Vector2(partPos.x, partPos.y).magnitude * vesselAngVel.z;
+            Vector3 partAccel;
+            partAccel.x = (float)Math.Pow(partAngSpeed.x, 2) / new Vector2(partPos.y, partPos.z).magnitude;
+            partAccel.y = (float)Math.Pow(partAngSpeed.y, 2) / new Vector2(partPos.x, partPos.z).magnitude;
+            partAccel.z = (float)Math.Pow(partAngSpeed.z, 2) / new Vector2(partPos.x, partPos.y).magnitude;
+            infoDisplay0 = "CoM: " + vesselCoM.ToString();
+            infoDisplay1 = "Pos: " + partPos.ToString();
+            infoDisplay2 = "AngV (rad/s): " + vesselAngVel.ToString();
+            infoDisplay3 = "AngS (m/s): " + partAngSpeed.ToString();
+            infoDisplay4 = "Accel (m/s): " + partAccel.ToString() + " (" + partAccel.magnitude + ")";
+
+            if (line == null)
+                InitLine();
+            //Vector3 lineVector = Part.VesselToPartSpacePos(partAccel, part, vessel, PartSpaceMode.Pristine);
+            //line.transform.rotation = Quaternion.LookRotation(lineVector.normalized);
+            //Vector3 lookDir = new Vector3(partPos.x, 0, 0);
+            //Vector3 upDir = new Vector3(partPos.x, 0, partPos.z);
+            //line.transform.rotation = Quaternion.LookRotation(vessel.up, upDir);
+            Vector3 lineVector = partAccel;
+            if (partPos.x < 0)
+                lineVector.x *= -1;
+            if (partPos.y < 0)
+                lineVector.y *= -1;
+            if (partPos.z < 0)
+                lineVector.z *= -1;
+            lineVector += partPos;
+            lineVector = Part.VesselToPartSpacePos(lineVector, part, vessel, PartSpaceMode.Pristine);
+            line.SetPosition(1, lineVector);
 
             if (listen || wasListening) // null ref in editor and flight init
             {
                 wasListening = listen;
                 float animPos = anim.GetScalar;
-                Debug.LogFormat("ModuleBdbAnimationMass: Moving position [{0}]", animPos);
+                //Debug.LogFormat("ModuleBdbAnimationMass: Moving position [{0}]", animPos);
                 part.CoMOffset.Set(_origComOffset.x + animPos * extentV.x, _origComOffset.y + animPos * extentV.y, _origComOffset.z + animPos * extentV.z);
-                GameEvents.onVesselWasModified.Fire(vessel);
-                Debug.LogFormat("ModuleBdbAnimationMass: CoM [{0}]", part.CoMOffset.ToString());
+                //GameEvents.onVesselWasModified.Fire(vessel);
+                //Debug.LogFormat("ModuleBdbAnimationMass: CoM [{0}]", part.CoMOffset.ToString());
             }
+        }
+
+        public void InitLine()
+        {
+            // First of all, create a GameObject to which LineRenderer will be attached.
+            lineObj = new GameObject("Line");
+
+            // Then create renderer itself...
+            line = lineObj.AddComponent<LineRenderer>();
+            line.transform.parent = part.transform; // ...child to our part...
+            line.useWorldSpace = false; // ...and moving along with it (rather 
+                                        // than staying in fixed world coordinates)
+            line.transform.localPosition = Vector3.zero;
+            line.transform.localEulerAngles = Vector3.zero;
+            line.transform.rotation = Quaternion.LookRotation(vessel.transform.forward, vessel.transform.up);
+
+            // Make it render a red to yellow triangle, 1 meter wide and 2 meters long
+            line.material = new Material(Shader.Find("Legacy Shaders/Particles/Alpha Blended"));
+            //line.SetColors(Color.red, Color.yellow);
+            line.startColor = Color.red;
+            line.endColor = Color.yellow;
+            //line.SetWidth(1, 0);
+            line.startWidth = 0.05f;
+            line.endWidth = 0.01f;
+            //line.SetVertexCount(2);
+            line.positionCount = 2;
+            line.SetPosition(0, Vector3.zero);
+            line.SetPosition(1, Vector3.forward * 2);
+            line.enabled = true;
+        }
+
+        public float GetModuleMass(float defaultMass, ModifierStagingSituation sit)
+        {
+            return 0.0f;
+        }
+
+        public ModifierChangeWhen GetModuleMassChangeWhen()
+        {
+            return ModifierChangeWhen.CONSTANTLY;
         }
     }
 
