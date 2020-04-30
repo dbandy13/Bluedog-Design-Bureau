@@ -60,8 +60,11 @@
     <Compile Include="Boiloff.cs" />
     <Compile Include="DepthMask.cs" />
     <Compile Include="Mercury.cs" />
+    <Compile Include="ModuleAnchoredDecoupler2.cs" />
+    <Compile Include="ModuleJettison2.cs" />
     <Compile Include="RCSEmissive.cs" />
     <Compile Include="RelayInfo.cs" />
+    <Compile Include="RotateInternal.cs" />
     <Compile Include="Settings.cs" />
     <Compile Include="DecouplerAnimation.cs" />
     <Compile Include="DefAGHelper.cs" />
